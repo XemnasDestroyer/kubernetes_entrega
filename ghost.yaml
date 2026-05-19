@@ -1,0 +1,117 @@
+# ========================================================
+# 1. EL ALMACENAMIENTO (Para que MySQL no pierda los datos)
+# ========================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+# ========================================================
+# 2. LA BASE DE DATOS (MySQL - Estrictamente 1 Réplica)
+# ========================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-deployment
+spec:
+  replicas: 1 # <--- La BD no se replica para evitar corrupción
+  selector:
+    matchLabels:
+      app: mysql-bd
+  template:
+    metadata:
+      labels:
+        app: mysql-bd
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "claveRootSuperSegura"
+        - name: MYSQL_DATABASE
+          value: "ghost_db"
+        - name: MYSQL_USER
+          value: "ghost_user"
+        - name: MYSQL_PASSWORD
+          value: "claveGhost123"
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-datos
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mysql-datos
+        persistentVolumeClaim:
+          claimName: mysql-pvc
+---
+# SERVICIO INTERNO PARA MYSQL
+# Esto permite que Ghost encuentre a MySQL usando el nombre "mysql-service"
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql-bd
+---
+# ========================================================
+# 3. LA APLICACIÓN (Ghost - Esta SÍ se puede replicar)
+# ========================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ghost-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ghost-app
+  template:
+    metadata:
+      labels:
+        app: ghost-app
+    spec:
+      containers:
+      - name: ghost
+        image: ghost:5-alpine
+        env:
+        # Aquí le decimos a Ghost cómo conectarse a la BD a través del clúster
+        - name: database__client
+          value: "mysql"
+        - name: database__connection__host
+          value: "mysql-service" # Usar el nombre del servicio de arriba
+        - name: database__connection__user
+          value: "ghost_user"
+        - name: database__connection__password
+          value: "claveGhost123"
+        - name: database__connection__database
+          value: "ghost_db"
+        - name: url
+          value: "http://localhost:8090"
+        ports:
+        - containerPort: 2368
+          name: ghost-port
+---
+# SERVICIO EXTERNO PARA GHOST
+apiVersion: v1
+kind: Service
+metadata:
+  name: ghost-servicio-externo
+spec:
+  type: LoadBalancer
+  selector:
+    app: ghost-app
+  ports:
+    - protocol: TCP
+      port: 8090      # Puerto para entrar desde el navegador
+      targetPort: 2368

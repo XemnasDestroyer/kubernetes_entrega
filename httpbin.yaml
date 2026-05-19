@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-httpbin-deployment
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: httpbin-web
+  template:
+    metadata:
+      labels:
+        app: httpbin-web
+    spec:
+      containers:
+      - name: httpbin-ctr
+        image: kennethreitz/httpbin
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-httpbin-servicio
+spec:
+  type: LoadBalancer
+  selector:
+    app: httpbin-web
+  ports:
+    - protocol: TCP
+      port: 9092
+      targetPort: 80
